@@ -11,6 +11,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pyodbc
+from typing import Optional
 
 app = FastAPI()
 
@@ -24,14 +25,6 @@ async def teste_email():
     resultado = enviar_email_boas_vindas("f3rrazin@gmail.com", "Teste Azure")
     print(f"=== RESULTADO: {resultado} ===")  # Debug 11
     return {"status": "sucesso" if resultado else "falha"}
-
-@app.get("/verificar-variaveis")
-async def verificar_variaveis():
-    return {
-        "SMTP_USER": os.environ.get("SMTP_USER"),
-        "SMTP_SERVER": os.environ.get("SMTP_SERVER"),
-        "SMTP_PORT": os.environ.get("SMTP_PORT")
-    }
 
 @app.get("/testar-conexao")
 def testar_conexao():
@@ -74,13 +67,20 @@ class Medico(BaseModel):
     cidade: str
     cep: str
 
-class AgendaCreate(BaseModel):
-    id_agenda: int
-    medico_id: int
-    paciente_id: int
-    data_inicio: str
-    data_fim: str
+class AgendaBase(BaseModel):
+    medico_id: int  # FK para Medico.UsuarioID
+    paciente_id: int  # FK para Paciente.UsuarioID
+    data_inicio: datetime
+    data_fim: datetime
     status: str = "Agendada"
+
+class AgendaCreate(AgendaBase):
+    pass
+
+class AgendaResponse(AgendaBase):
+    id: int  # PK da tabela
+    class Config:
+        from_attributes = True
 
 class ConversaCreate(BaseModel):
     id_usuario1: int
@@ -318,7 +318,7 @@ async def login(request: Request):
         if conn:
             conn.close()
 
-@app.post("/agendas/", tags=["Agendamentos"])
+@app.post("/agendas/", response_model=AgendaResponse, tags=["Agendamentos"])
 def criar_agendamento(agenda: AgendaCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -333,15 +333,40 @@ def criar_agendamento(agenda: AgendaCreate):
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Paciente não encontrado")
         
+        # Insere e retorna o ID gerado
         cursor.execute(
-            """INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) 
-            OUTPUT INSERTED.ID 
+            """INSERT INTO Agenda (
+                MedicoID, 
+                PacienteID, 
+                DataInicio, 
+                DataFim, 
+                Status
+            ) 
+            OUTPUT INSERTED.ID, INSERTED.MedicoID, INSERTED.PacienteID, 
+                   INSERTED.DataInicio, INSERTED.DataFim, INSERTED.Status
             VALUES (?, ?, ?, ?, ?)""",
-            (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
+            (
+                agenda.medico_id,
+                agenda.paciente_id,
+                agenda.data_inicio,
+                agenda.data_fim,
+                agenda.status
+            )
         )
-        novo_id = cursor.fetchone()[0]
+        
+        # Obtém todos os dados inseridos
+        inserted_data = cursor.fetchone()
         conn.commit()
-        return {"id": novo_id, **agenda.model_dump()}
+        
+        # Mapeia para o modelo de resposta
+        return {
+            "id_agenda": inserted_data[0],
+            "medico_id": inserted_data[1],
+            "paciente_id": inserted_data[2],
+            "data_inicio": inserted_data[3],
+            "data_fim": inserted_data[4],
+            "status": inserted_data[5]
+        }
         
     except pyodbc.IntegrityError as e:
         raise HTTPException(status_code=400, detail=f"Erro de integridade: {str(e)}")
@@ -351,31 +376,72 @@ def criar_agendamento(agenda: AgendaCreate):
         cursor.close()
         conn.close()
 
-@app.get("/agendas/", tags=["Agendamentos"])
+@app.get("/agendas/{agenda_id}", response_model=AgendaResponse, tags=["Agendamentos"])
+def obter_agendamento(agenda_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """SELECT 
+                ID,
+                MedicoID,
+                PacienteID,
+                DataInicio,
+                DataFim,
+                Status
+            FROM Agenda
+            WHERE ID = ?""",
+            (agenda_id,)
+        )
+        
+        agenda = cursor.fetchone()
+        if not agenda:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+        
+        return {
+            "id_agenda": agenda[0],
+            "medico_id": agenda[1],
+            "paciente_id": agenda[2],
+            "data_inicio": agenda[3],
+            "data_fim": agenda[4],
+            "status": agenda[5]
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.get("/agendas/", response_model=list[AgendaResponse], tags=["Agendamentos"])
 def listar_agendamentos():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("""
-            SELECT 
-                a.ID,
-                a.MedicoID,
-                m.Nome AS MedicoNome,
-                a.PacienteID,
-                p.Nome AS PacienteNome,
-                a.DataInicio,
-                a.DataFim,
-                a.Status
-            FROM Agenda a
-            JOIN Medico m ON a.MedicoID = m.UsuarioID
-            JOIN Paciente p ON a.PacienteID = p.UsuarioID
-        """)
-        columns = [column[0] for column in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.execute(
+            """SELECT 
+                ID,
+                MedicoID,
+                PacienteID,
+                DataInicio,
+                DataFim,
+                Status
+            FROM Agenda"""
+        )
+        
+        return [
+            {
+                "id_agenda": row[0],
+                "medico_id": row[1],
+                "paciente_id": row[2],
+                "data_inicio": row[3],
+                "data_fim": row[4],
+                "status": row[5]
+            }
+            for row in cursor.fetchall()
+        ]
     finally:
         cursor.close()
         conn.close()
-    
+
 def salvar_mensagem_no_banco(conversa_id: int, remetente_id: int, texto: str):
     conn = get_db_connection()
     cursor = conn.cursor()
