@@ -75,6 +75,7 @@ class Medico(BaseModel):
     cep: str
 
 class AgendaCreate(BaseModel):
+    id_agenda: int
     medico_id: int
     paciente_id: int
     data_inicio: str
@@ -375,79 +376,67 @@ def listar_agendamentos():
         cursor.close()
         conn.close()
     
-# --- CHAT (Lógica do WebSocket e API de Suporte) ---
+def salvar_mensagem_no_banco(conversa_id: int, remetente_id: int, texto: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto, DataEnvio, Lido) 
+            VALUES (?, ?, ?, GETDATE(), 0)""",
+            (conversa_id, remetente_id, texto)
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
 
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[int, WebSocket] = {}
-
-    async def connect(self, websocket: WebSocket, user_id: int):
-        await websocket.accept()
-        self.active_connections[user_id] = websocket
-        print(f"Usuário {user_id} online.")
-
-    def disconnect(self, user_id: int):
-        if user_id in self.active_connections:
-            del self.active_connections[user_id]
-            print(f"Usuário {user_id} offline.")
-
-    async def send_personal_message(self, message: str, user_id: int):
-        if user_id in self.active_connections:
-            await self.active_connections[user_id].send_text(message)
-
-manager = ConnectionManager()
-
-@app.post("/conversas/", tags=["Chat"], summary="Cria uma nova conversa")
+@app.post("/conversas/", tags=["Chat"])
 async def criar_conversa(conversa_data: ConversaCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
-    id1, id2 = conversa_data.id_usuario1, conversa_data.id_usuario2
-    
-    cursor.execute("SELECT UsuarioID FROM Medico WHERE UsuarioID IN (?, ?)", (id1, id2))
-    medico_check = cursor.fetchall()
-    cursor.execute("SELECT UsuarioID FROM Paciente WHERE UsuarioID IN (?, ?)", (id1, id2))
-    paciente_check = cursor.fetchall()
-
-    if len(medico_check) != 1 or len(paciente_check) != 1:
+    try:
+        # Verifica quem é médico e quem é paciente
+        cursor.execute("""
+            SELECT 
+                SUM(CASE WHEN m.UsuarioID IS NOT NULL THEN 1 ELSE 0 END) as medicos,
+                SUM(CASE WHEN p.UsuarioID IS NOT NULL THEN 1 ELSE 0 END) as pacientes
+            FROM (VALUES (?), (?)) AS users(id)
+            LEFT JOIN Medico m ON users.id = m.UsuarioID
+            LEFT JOIN Paciente p ON users.id = p.UsuarioID
+        """, (conversa_data.id_usuario1, conversa_data.id_usuario2))
+        
+        counts = cursor.fetchone()
+        if counts[0] != 1 or counts[1] != 1:
+            raise HTTPException(status_code=400, detail="Deve haver exatamente 1 médico e 1 paciente")
+        
+        # Identifica quem é médico e quem é paciente
+        cursor.execute("SELECT UsuarioID FROM Medico WHERE UsuarioID IN (?, ?)", 
+                      (conversa_data.id_usuario1, conversa_data.id_usuario2))
+        medico_id = cursor.fetchone()[0]
+        paciente_id = conversa_data.id_usuario2 if conversa_data.id_usuario1 == medico_id else conversa_data.id_usuario1
+        
+        # Verifica se conversa já existe
+        cursor.execute(
+            "SELECT ID FROM Conversa WHERE MedicoUsuarioID = ? AND PacienteUsuarioID = ?",
+            (medico_id, paciente_id)
+        )
+        if existente := cursor.fetchone():
+            return {"conversa_id": existente[0], "status": "existente"}
+        
+        # Cria nova conversa
+        cursor.execute(
+            "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) OUTPUT INSERTED.ID VALUES (?, ?)",
+            (medico_id, paciente_id)
+        )
+        novo_id = cursor.fetchone()[0]
+        conn.commit()
+        return {"conversa_id": novo_id, "status": "criada"}
+        
+    except pyodbc.Error as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
         conn.close()
-        raise HTTPException(status_code=404, detail="É necessário um ID de médico válido e um ID de paciente válido.")
-
-    medico_id, paciente_id = medico_check[0][0], paciente_check[0][0]
-    
-    cursor.execute("SELECT ID FROM Conversa WHERE MedicoUsuarioID = ? AND PacienteUsuarioID = ?", medico_id, paciente_id)
-    if existente := cursor.fetchone():
-        conn.close()
-        return {"conversa_id": existente[0], "status": "existente"}
-    
-    cursor.execute("INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) OUTPUT INSERTED.ID VALUES (?, ?)", medico_id, paciente_id)
-    novo_id = cursor.fetchone()[0]
-    conn.close()
-    return {"conversa_id": novo_id, "status": "criada"}
-
-@app.get("/usuarios/{usuario_id}/conversas", tags=["Chat"], summary="Lista as conversas de um usuário")
-async def get_conversas_por_usuario(usuario_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    sql = """
-        SELECT C.ID AS ConversaID, C.MedicoUsuarioID, M.Nome AS MedicoNome, C.PacienteUsuarioID, P.Nome AS PacienteNome
-        FROM Conversa AS C
-        JOIN Medico AS M ON C.MedicoUsuarioID = M.UsuarioID
-        JOIN Paciente AS P ON C.PacienteUsuarioID = P.UsuarioID
-        WHERE C.MedicoUsuarioID = ? OR C.PacienteUsuarioID = ?
-    """
-    cursor.execute(sql, usuario_id, usuario_id)
-    conversas = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
-    conn.close()
-    return conversas
-
-@app.get("/historico/{conversa_id}", tags=["Chat"], summary="Busca o histórico de uma conversa")
-async def get_historico_conversa(conversa_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Mensagem WHERE ConversaID = ? ORDER BY DataEnvio ASC", conversa_id)
-    historico = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
-    conn.close()
-    return historico
 
 @app.websocket("/ws/{conversa_id}/{usuario_id}")
 async def websocket_endpoint(websocket: WebSocket, conversa_id: int, usuario_id: int):
@@ -455,13 +444,43 @@ async def websocket_endpoint(websocket: WebSocket, conversa_id: int, usuario_id:
     try:
         while True:
             data = await websocket.receive_json()
+            
+            # Verifica se o usuário tem permissão nesta conversa
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM Conversa WHERE ID = ? AND (MedicoUsuarioID = ? OR PacienteUsuarioID = ?)",
+                (conversa_id, usuario_id, usuario_id)
+            )
+            if not cursor.fetchone():
+                await websocket.send_json({"error": "Acesso não autorizado"})
+                continue
+                
+            # Salva mensagem e envia
             salvar_mensagem_no_banco(conversa_id, usuario_id, data['texto'])
-            mensagem_para_enviar = {"remetente_id": usuario_id, "texto": data['texto']}
-            await manager.send_personal_message(json.dumps(mensagem_para_enviar), data['destinatario_id'])
+            
+            # Identifica o destinatário
+            cursor.execute(
+                "SELECT MedicoUsuarioID, PacienteUsuarioID FROM Conversa WHERE ID = ?",
+                (conversa_id,)
+            )
+            medico_id, paciente_id = cursor.fetchone()
+            destinatario_id = paciente_id if usuario_id == medico_id else medico_id
+            
+            mensagem = {
+                "conversa_id": conversa_id,
+                "remetente_id": usuario_id,
+                "texto": data['texto'],
+                "data_envio": datetime.now().isoformat()
+            }
+            
+            await manager.send_personal_message(json.dumps(mensagem), destinatario_id)
+            
     except WebSocketDisconnect:
         manager.disconnect(usuario_id)
     except Exception as e:
-        print(f"Ocorreu um erro no WebSocket: {e}")
+        print(f"Erro no WebSocket: {e}")
+    finally:
         manager.disconnect(usuario_id)
 
 def enviar_email_boas_vindas(destinatario, nome):
