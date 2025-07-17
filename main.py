@@ -423,16 +423,17 @@ def listar_mensagens():
 
 def enviar_email_boas_vindas(destinatario, nome):
     try:
-        # Obter configurações
+        # Obter configurações do ambiente
         remetente = os.environ.get("SMTP_USER")
         senha = os.environ.get("SMTP_PASSWORD")
         smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.environ.get("SMTP_PORT", 587))
         
-        print(f"Configuração SMTP: Server={smtp_server}, Port={smtp_port}, From={remetente}")
-        
-        if not all([remetente, senha]):
-            raise ValueError("Variáveis de ambiente SMTP_USER ou SMTP_PASSWORD não configuradas")
+        print(f"Tentando enviar email para {destinatario} via {smtp_server}:{smtp_port}")
+
+        if not remetente or not senha:
+            print("Erro: SMTP_USER ou SMTP_PASSWORD não configurados")
+            return False
 
         # Criar mensagem
         msg = MIMEMultipart("alternative")
@@ -452,7 +453,7 @@ def enviar_email_boas_vindas(destinatario, nome):
 
         msg.attach(MIMEText(html, "html"))
 
-        # Enviar e-mail
+        # Enviar email
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.ehlo()
             server.starttls()
@@ -460,16 +461,15 @@ def enviar_email_boas_vindas(destinatario, nome):
             server.login(remetente, senha)
             server.sendmail(remetente, destinatario, msg.as_string())
         
-        print(f"E-mail enviado com sucesso para {destinatario}")
+        print("Email enviado com sucesso!")
         return True
         
+    except smtplib.SMTPException as e:
+        print(f"Erro SMTP: {str(e)}")
     except Exception as e:
-        error_msg = f"Erro ao enviar e-mail: {str(e)}"
-        print(error_msg)
-        # Adicione este log ao sistema de logs do Azure
-        if 'app' in globals():
-            app.logger.error(error_msg)
-        return False
+        print(f"Erro inesperado: {str(e)}")
+    
+    return False
 
 if __name__ == "__main__":
     import uvicorn
