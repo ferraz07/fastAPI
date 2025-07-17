@@ -5,7 +5,7 @@ server = 'medserverufsj.database.windows.net'
 database = 'medfinderBD'
 username = 'admin_medfinder'
 password = 'SuaSenhaMuitoForte123!'
-driver = '{ODBC Driver 17 for SQL Server}'
+driver = '{ODBC Driver 18 for SQL Server}'
 
 connection_string = (
     f"DRIVER={driver};"
