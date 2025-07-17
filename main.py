@@ -16,9 +16,19 @@ app = FastAPI()
 
 @app.get("/testar-email")
 async def teste_email():
-    resultado = enviar_email_boas_vindas("f3rrazin@dgmail.com", "Teste")
+    print("\n=== INICIANDO TESTE DE EMAIL ===")  # Debug 0
+    resultado = enviar_email_boas_vindas("seu-email-de-teste@gmail.com", "Teste Azure")
+    print(f"=== RESULTADO: {resultado} ===")  # Debug 11
     return {"status": "sucesso" if resultado else "falha"}
-    
+
+@app.get("/verificar-variaveis")
+async def verificar_variaveis():
+    return {
+        "SMTP_USER": os.environ.get("SMTP_USER"),
+        "SMTP_SERVER": os.environ.get("SMTP_SERVER"),
+        "SMTP_PORT": os.environ.get("SMTP_PORT")
+    }
+
 @app.get("/testar-conexao")
 def testar_conexao():
     try:
