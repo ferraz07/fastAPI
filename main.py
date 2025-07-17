@@ -10,17 +10,23 @@ from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import pyodbc
 
 app = FastAPI()
+
 @app.get("/testar-conexao")
 def testar_conexao():
     try:
         conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
         conn.close()
-        return {"status": "Conexão bem-sucedida"}
+        return {"status": "Conexão bem-sucedida", "resultado": result[0]}
     except Exception as e:
         return {"status": "Erro na conexão", "detalhes": str(e)}
-# Configuração do CORS necesária
+
+# Configuração do CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -29,9 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ==== MODELS ====
-
 class Usuario(BaseModel):
     email: str
     senha: str
@@ -72,119 +76,192 @@ class PacienteComUsuario(BaseModel):
     senha: str
     nome: str
     cpf: str
-    data_nascimento: str  # formato 'YYYY-MM-DD'
+    data_nascimento: str
 
 # ==== USUARIO ====
-
 @app.post("/pacientes-com-usuario")
 def cadastrar_paciente_com_usuario(dados: PacienteComUsuario):
-    conn = get_connection()
-    cur = conn.cursor()
-
+    conn = None
+    cursor = None
     try:
-        # 1. Inserir na tabela Usuario
-        cur.execute(
-            "INSERT INTO Usuario (Email, Senha) VALUES (?, ?) RETURNING ID",
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Inserir usuário e obter ID (SQL Server usa OUTPUT INSERTED)
+        cursor.execute(
+            "INSERT INTO Usuario (Email, Senha) OUTPUT INSERTED.ID VALUES (?, ?)", 
             (dados.email, dados.senha)
         )
-        usuario_id = cur.fetchone()[0]
-
-        # 2. Inserir na tabela Paciente com o ID retornado
-        cur.execute(
-            "INSERT INTO Paciente (UsuarioID, Nome, CPF, DataNascimento) VALUES (?, ?, ?, ?)",
+        usuario_id = cursor.fetchone()[0]
+        
+        # Inserir paciente
+        cursor.execute(
+            "INSERT INTO Paciente (UsuarioID, Nome, CPF, DataNascimento) VALUES (?, ?, ?, ?)", 
             (usuario_id, dados.nome, dados.cpf, dados.data_nascimento)
         )
-
+        
         conn.commit()
         enviar_email_boas_vindas(dados.email, dados.nome)
-        
         return {"mensagem": "Paciente cadastrado com sucesso!", "usuario_id": usuario_id}
 
+    except pyodbc.IntegrityError as e:
+        raise HTTPException(status_code=400, detail="Email ou CPF já cadastrado")
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-
     finally:
-        cur.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.post("/usuarios")
 def criar_usuario(usuario: Usuario):
+    conn = None
+    cursor = None
     try:
         conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("INSERT INTO Usuario (Email, Senha) VALUES (?, ?) RETURNING ID", (usuario.email, usuario.senha))
-        usuario_id = cur.fetchone()[0]
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Usuario (Email, Senha) OUTPUT INSERTED.ID VALUES (?, ?)", 
+            (usuario.email, usuario.senha)
+        )
+        usuario_id = cursor.fetchone()[0]
         conn.commit()
         return {"usuario_id": usuario_id}
+    except pyodbc.IntegrityError as e:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/usuarios")
 def listar_usuarios():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Usuario")
-    data = cur.fetchall()
-    conn.close()
-    return data
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, Email FROM Usuario")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.delete("/usuarios/{usuario_id}")
 def deletar_usuario(usuario_id: int):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM Usuario WHERE ID = ?", (usuario_id,))
-    conn.commit()
-    conn.close()
-    return {"msg": "Usuário deletado"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Usuario WHERE ID = ?", (usuario_id,))
+        conn.commit()
+        return {"msg": "Usuário deletado"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # ==== PACIENTE ====
-
 @app.post("/pacientes")
 def criar_paciente(paciente: Paciente):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (?, ?, ?, ?)",
-        (paciente.usuario_id, paciente.nome, paciente.data_nascimento, paciente.cpf)
-    )
-    conn.commit()
-    conn.close()
-    return {"msg": "Paciente criado"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (?, ?, ?, ?)", 
+            (paciente.usuario_id, paciente.nome, paciente.data_nascimento, paciente.cpf)
+        )
+        conn.commit()
+        return {"msg": "Paciente criado"}
+    except pyodbc.IntegrityError as e:
+        raise HTTPException(status_code=400, detail="CPF já cadastrado ou usuário inválido")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/pacientes")
 def listar_pacientes():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Paciente")
-    data = cur.fetchall()
-    conn.close()
-    return data
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, UsuarioID, Nome, CPF, DataNascimento FROM Paciente")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # ==== MEDICO ====
-
 @app.post("/medicos")
 def criar_medico(medico: Medico):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (medico.usuario_id, medico.nome, medico.especialidade, medico.crm, medico.logradouro, medico.cidade, medico.cep)
-    )
-    conn.commit()
-    conn.close()
-    return {"msg": "Médico criado"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+            (medico.usuario_id, medico.nome, medico.especialidade, medico.crm, medico.logradouro, medico.cidade, medico.cep)
+        )
+        conn.commit()
+        return {"msg": "Médico criado"}
+    except pyodbc.IntegrityError as e:
+        raise HTTPException(status_code=400, detail="CRM já cadastrado ou usuário inválido")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/medicos")
 def listar_medicos():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Medico")
-    data = cur.fetchall()
-    conn.close()
-    return data
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP FROM Medico")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.post("/login")
 async def login(request: Request):
@@ -192,100 +269,157 @@ async def login(request: Request):
     email = dados.get("email")
     senha = dados.get("senha")
     
-    conn = get_connection()
-    cur = conn.cursor()
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
 
-    cur.execute("SELECT ID FROM Usuario WHERE Email = ? AND Senha = ?", (email, senha))
-    user = cur.fetchone()
+        cursor.execute("SELECT ID FROM Usuario WHERE Email = ? AND Senha = ?", (email, senha))
+        user = cursor.fetchone()
 
-    if not user:
-        cur.close()
-        conn.close()
-        return {"success": False, "message": "Credenciais inválidas"}
+        if not user:
+            return {"success": False, "message": "Credenciais inválidas"}
 
-    user_id = user[0]
+        user_id = user[0]
 
-    cur.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (user_id,))
-    is_patient = cur.fetchone()
+        cursor.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (user_id,))
+        is_patient = cursor.fetchone()
 
-    cur.close()
-    conn.close()
-
-    return {
-        "success": True,
-        "tipo": "paciente" if is_patient else "medico"
-    }
+        return {
+            "success": True,
+            "tipo": "paciente" if is_patient else "medico"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # ==== AGENDA ====
-
 @app.post("/agendas")
 def criar_agendamento(agenda: Agenda):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) VALUES (?, ?, ?, ?, ?)",
-        (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
-    )
-    conn.commit()
-    conn.close()
-    return {"msg": "Agendamento criado"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) VALUES (?, ?, ?, ?, ?)", 
+            (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
+        )
+        conn.commit()
+        return {"msg": "Agendamento criado"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/agendas")
 def listar_agendamentos():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Agenda")
-    data = cur.fetchall()
-    conn.close()
-    return data
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, MedicoID, PacienteID, DataInicio, DataFim, Status FROM Agenda")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # ==== CONVERSA ====
-
 @app.post("/conversas")
 def criar_conversa(conversa: Conversa):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) VALUES (?, ?)",
-        (conversa.medico_usuario_id, conversa.paciente_usuario_id)
-    )
-    conn.commit()
-    conn.close()
-    return {"msg": "Conversa criada"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) VALUES (?, ?)", 
+            (conversa.medico_usuario_id, conversa.paciente_usuario_id)
+        )
+        conn.commit()
+        return {"msg": "Conversa criada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/conversas")
 def listar_conversas():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Conversa")
-    data = cur.fetchall()
-    conn.close()
-    return data
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, MedicoUsuarioID, PacienteUsuarioID FROM Conversa")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 # ==== MENSAGEM ====
-
 @app.post("/mensagens")
 def enviar_mensagem(msg: Mensagem):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto) VALUES (?, ?, ?)",
-        (msg.conversa_id, msg.remetente_usuario_id, msg.texto)
-    )
-    conn.commit()
-    conn.close()
-    return {"msg": "Mensagem enviada"}
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto) VALUES (?, ?, ?)", 
+            (msg.conversa_id, msg.remetente_usuario_id, msg.texto)
+        )
+        conn.commit()
+        return {"msg": "Mensagem enviada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 @app.get("/mensagens")
 def listar_mensagens():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Mensagem")
-    data = cur.fetchall()
-    conn.close()
-    return data
-# ====== EVENT GRID =======
-
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, ConversaID, RemetenteUsuarioID, Texto, DataEnvio FROM Mensagem")
+        columns = [column[0] for column in cursor.description]
+        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def enviar_email_boas_vindas(destinatario, nome):
     remetente = os.environ.get("SMTP_USER")
@@ -319,3 +453,7 @@ def enviar_email_boas_vindas(destinatario, nome):
         print("Email enviado com sucesso.")
     except Exception as e:
         print("Erro ao enviar email:", e)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
