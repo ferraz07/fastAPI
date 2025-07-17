@@ -1,8 +1,5 @@
 fastapi
 uvicorn
+gunicorn
 psycopg2-binary
 requests
-uuid
-json
-os
-datetime
