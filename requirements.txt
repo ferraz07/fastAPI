@@ -4,3 +4,4 @@ gunicorn
 psycopg2-binary
 requests
 email
+python-dotenv
