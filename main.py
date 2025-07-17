@@ -74,18 +74,18 @@ class Medico(BaseModel):
     cidade: str
     cep: str
 
-class Agenda(BaseModel):
+class AgendaCreate(BaseModel):
     medico_id: int
     paciente_id: int
     data_inicio: str
     data_fim: str
     status: str = "Agendada"
 
-class Conversa(BaseModel):
-    medico_usuario_id: int
-    paciente_usuario_id: int
+class ConversaCreate(BaseModel):
+    id_usuario1: int
+    id_usuario2: int
 
-class Mensagem(BaseModel):
+class MensagemCreate(BaseModel):
     conversa_id: int
     remetente_usuario_id: int
     texto: str
