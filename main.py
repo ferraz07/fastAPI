@@ -14,6 +14,11 @@ import pyodbc
 
 app = FastAPI()
 
+@app.get("/testar-email")
+async def teste_email():
+    resultado = enviar_email_boas_vindas("f3rrazin@dgmail.com", "Teste")
+    return {"status": "sucesso" if resultado else "falha"}
+    
 @app.get("/testar-conexao")
 def testar_conexao():
     try:
