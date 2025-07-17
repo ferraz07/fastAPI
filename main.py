@@ -12,7 +12,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 app = FastAPI()
-
+@app.get("/testar-conexao")
+def testar_conexao():
+    try:
+        conn = get_connection()
+        conn.close()
+        return {"status": "Conexão bem-sucedida"}
+    except Exception as e:
+        return {"status": "Erro na conexão", "detalhes": str(e)}
 # Configuração do CORS necesária
 app.add_middleware(
     CORSMiddleware,
