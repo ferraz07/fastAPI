@@ -325,7 +325,7 @@ def criar_agendamento(agenda: AgendaCreate):
     try:
         cursor.execute(
             "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) OUTPUT INSERTED.ID VALUES (?, ?, ?, ?, ?)",
-            agenda.MedicoID, agenda.PacienteID, agenda.DataInicio, agenda.DataFim, agenda.Status
+            agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status
         )
         novo_id = cursor.fetchone()[0]
         return {"id": novo_id, **agenda.model_dump()}
