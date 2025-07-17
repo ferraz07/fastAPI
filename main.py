@@ -317,128 +317,120 @@ async def login(request: Request):
         if conn:
             conn.close()
 
-# ==== AGENDA ====
-@app.post("/agendas")
-def criar_agendamento(agenda: Agenda):
-    conn = None
-    cursor = None
+# --- AGENDAMENTOS ---
+@app.post("/agendas/", tags=["Agendamentos"], summary="Cria um novo agendamento")
+def criar_agendamento(agenda: AgendaCreate):
+    conn = get_db_connection()
+    cursor = conn.cursor()
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) VALUES (?, ?, ?, ?, ?)", 
-            (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
+            "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) OUTPUT INSERTED.ID VALUES (?, ?, ?, ?, ?)",
+            agenda.MedicoID, agenda.PacienteID, agenda.DataInicio, agenda.DataFim, agenda.Status
         )
-        conn.commit()
-        return {"msg": "Agendamento criado"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        novo_id = cursor.fetchone()[0]
+        return {"id": novo_id, **agenda.model_dump()}
+    except pyodbc.IntegrityError as e:
+        raise HTTPException(status_code=400, detail=f"Erro de integridade: Verifique se os IDs de Médico e Paciente existem. Detalhe: {e}")
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        conn.close()
 
-@app.get("/agendas")
+@app.get("/agendas/", tags=["Agendamentos"], summary="Lista todos os agendamentos")
 def listar_agendamentos():
-    conn = None
-    cursor = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT ID, MedicoID, PacienteID, DataInicio, DataFim, Status FROM Agenda")
-        columns = [column[0] for column in cursor.description]
-        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Agenda")
+    agendas = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
+    conn.close()
+    return agendas
+    
+# --- CHAT (Lógica do WebSocket e API de Suporte) ---
 
-# ==== CONVERSA ====
-@app.post("/conversas")
-def criar_conversa(conversa: Conversa):
-    conn = None
-    cursor = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) VALUES (?, ?)", 
-            (conversa.medico_usuario_id, conversa.paciente_usuario_id)
-        )
-        conn.commit()
-        return {"msg": "Conversa criada"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[int, WebSocket] = {}
 
-@app.get("/conversas")
-def listar_conversas():
-    conn = None
-    cursor = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT ID, MedicoUsuarioID, PacienteUsuarioID FROM Conversa")
-        columns = [column[0] for column in cursor.description]
-        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    async def connect(self, websocket: WebSocket, user_id: int):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+        print(f"Usuário {user_id} online.")
 
-# ==== MENSAGEM ====
-@app.post("/mensagens")
-def enviar_mensagem(msg: Mensagem):
-    conn = None
-    cursor = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto) VALUES (?, ?, ?)", 
-            (msg.conversa_id, msg.remetente_usuario_id, msg.texto)
-        )
-        conn.commit()
-        return {"msg": "Mensagem enviada"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    def disconnect(self, user_id: int):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+            print(f"Usuário {user_id} offline.")
 
-@app.get("/mensagens")
-def listar_mensagens():
-    conn = None
-    cursor = None
+    async def send_personal_message(self, message: str, user_id: int):
+        if user_id in self.active_connections:
+            await self.active_connections[user_id].send_text(message)
+
+manager = ConnectionManager()
+
+@app.post("/conversas/", tags=["Chat"], summary="Cria uma nova conversa")
+async def criar_conversa(conversa_data: ConversaCreate):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    id1, id2 = conversa_data.id_usuario1, conversa_data.id_usuario2
+    
+    cursor.execute("SELECT UsuarioID FROM Medico WHERE UsuarioID IN (?, ?)", (id1, id2))
+    medico_check = cursor.fetchall()
+    cursor.execute("SELECT UsuarioID FROM Paciente WHERE UsuarioID IN (?, ?)", (id1, id2))
+    paciente_check = cursor.fetchall()
+
+    if len(medico_check) != 1 or len(paciente_check) != 1:
+        conn.close()
+        raise HTTPException(status_code=404, detail="É necessário um ID de médico válido e um ID de paciente válido.")
+
+    medico_id, paciente_id = medico_check[0][0], paciente_check[0][0]
+    
+    cursor.execute("SELECT ID FROM Conversa WHERE MedicoUsuarioID = ? AND PacienteUsuarioID = ?", medico_id, paciente_id)
+    if existente := cursor.fetchone():
+        conn.close()
+        return {"conversa_id": existente[0], "status": "existente"}
+    
+    cursor.execute("INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) OUTPUT INSERTED.ID VALUES (?, ?)", medico_id, paciente_id)
+    novo_id = cursor.fetchone()[0]
+    conn.close()
+    return {"conversa_id": novo_id, "status": "criada"}
+
+@app.get("/usuarios/{usuario_id}/conversas", tags=["Chat"], summary="Lista as conversas de um usuário")
+async def get_conversas_por_usuario(usuario_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    sql = """
+        SELECT C.ID AS ConversaID, C.MedicoUsuarioID, M.Nome AS MedicoNome, C.PacienteUsuarioID, P.Nome AS PacienteNome
+        FROM Conversa AS C
+        JOIN Medico AS M ON C.MedicoUsuarioID = M.UsuarioID
+        JOIN Paciente AS P ON C.PacienteUsuarioID = P.UsuarioID
+        WHERE C.MedicoUsuarioID = ? OR C.PacienteUsuarioID = ?
+    """
+    cursor.execute(sql, usuario_id, usuario_id)
+    conversas = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
+    conn.close()
+    return conversas
+
+@app.get("/historico/{conversa_id}", tags=["Chat"], summary="Busca o histórico de uma conversa")
+async def get_historico_conversa(conversa_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM Mensagem WHERE ConversaID = ? ORDER BY DataEnvio ASC", conversa_id)
+    historico = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
+    conn.close()
+    return historico
+
+@app.websocket("/ws/{conversa_id}/{usuario_id}")
+async def websocket_endpoint(websocket: WebSocket, conversa_id: int, usuario_id: int):
+    await manager.connect(websocket, usuario_id)
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT ID, ConversaID, RemetenteUsuarioID, Texto, DataEnvio FROM Mensagem")
-        columns = [column[0] for column in cursor.description]
-        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        return data
+        while True:
+            data = await websocket.receive_json()
+            salvar_mensagem_no_banco(conversa_id, usuario_id, data['texto'])
+            mensagem_para_enviar = {"remetente_id": usuario_id, "texto": data['texto']}
+            await manager.send_personal_message(json.dumps(mensagem_para_enviar), data['destinatario_id'])
+    except WebSocketDisconnect:
+        manager.disconnect(usuario_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        print(f"Ocorreu um erro no WebSocket: {e}")
+        manager.disconnect(usuario_id)
 
 def enviar_email_boas_vindas(destinatario, nome):
     try:
