@@ -7,16 +7,17 @@ username = 'admin_medfinder'
 password = 'SuaSenhaMuitoForte123!'
 driver = '{ODBC Driver 17 for SQL Server}'
 
-connection_string = f"""
-    DRIVER={driver};
-    SERVER={server};
-    DATABASE={database};
-    UID={username};
-    PWD={password};
-    Encrypt=yes;
-    TrustServerCertificate=no;
-    Connection Timeout=30;
-"""
+connection_string = (
+    f"DRIVER={driver};"
+    f"SERVER={server};"
+    f"DATABASE={database};"
+    f"UID={username};"
+    f"PWD={password};"
+    "Encrypt=yes;"
+    "TrustServerCertificate=no;"
+    "Connection Timeout=30;"
+)
+
 
 def get_connection():
     return pyodbc.connect(connection_string)
