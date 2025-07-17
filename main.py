@@ -84,14 +84,14 @@ def cadastrar_paciente_com_usuario(dados: PacienteComUsuario):
     try:
         # 1. Inserir na tabela Usuario
         cur.execute(
-            "INSERT INTO Usuario (Email, Senha) VALUES (%s, %s) RETURNING ID",
+            "INSERT INTO Usuario (Email, Senha) VALUES (?, ?) RETURNING ID",
             (dados.email, dados.senha)
         )
         usuario_id = cur.fetchone()[0]
 
         # 2. Inserir na tabela Paciente com o ID retornado
         cur.execute(
-            "INSERT INTO Paciente (UsuarioID, Nome, CPF, DataNascimento) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO Paciente (UsuarioID, Nome, CPF, DataNascimento) VALUES (?, ?, ?, ?)",
             (usuario_id, dados.nome, dados.cpf, dados.data_nascimento)
         )
 
@@ -113,7 +113,7 @@ def criar_usuario(usuario: Usuario):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("INSERT INTO Usuario (Email, Senha) VALUES (%s, %s) RETURNING ID", (usuario.email, usuario.senha))
+        cur.execute("INSERT INTO Usuario (Email, Senha) VALUES (?, ?) RETURNING ID", (usuario.email, usuario.senha))
         usuario_id = cur.fetchone()[0]
         conn.commit()
         return {"usuario_id": usuario_id}
@@ -135,7 +135,7 @@ def listar_usuarios():
 def deletar_usuario(usuario_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM Usuario WHERE ID = %s", (usuario_id,))
+    cur.execute("DELETE FROM Usuario WHERE ID = ?", (usuario_id,))
     conn.commit()
     conn.close()
     return {"msg": "Usuário deletado"}
@@ -147,7 +147,7 @@ def criar_paciente(paciente: Paciente):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (?, ?, ?, ?)",
         (paciente.usuario_id, paciente.nome, paciente.data_nascimento, paciente.cpf)
     )
     conn.commit()
@@ -170,7 +170,7 @@ def criar_medico(medico: Medico):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (medico.usuario_id, medico.nome, medico.especialidade, medico.crm, medico.logradouro, medico.cidade, medico.cep)
     )
     conn.commit()
@@ -195,7 +195,7 @@ async def login(request: Request):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT ID FROM Usuario WHERE Email = %s AND Senha = %s", (email, senha))
+    cur.execute("SELECT ID FROM Usuario WHERE Email = ? AND Senha = ?", (email, senha))
     user = cur.fetchone()
 
     if not user:
@@ -205,7 +205,7 @@ async def login(request: Request):
 
     user_id = user[0]
 
-    cur.execute("SELECT 1 FROM Paciente WHERE UsuarioID = %s", (user_id,))
+    cur.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (user_id,))
     is_patient = cur.fetchone()
 
     cur.close()
@@ -223,7 +223,7 @@ def criar_agendamento(agenda: Agenda):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) VALUES (%s, %s, %s, %s, %s)",
+        "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) VALUES (?, ?, ?, ?, ?)",
         (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
     )
     conn.commit()
@@ -246,7 +246,7 @@ def criar_conversa(conversa: Conversa):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) VALUES (%s, %s)",
+        "INSERT INTO Conversa (MedicoUsuarioID, PacienteUsuarioID) VALUES (?, ?)",
         (conversa.medico_usuario_id, conversa.paciente_usuario_id)
     )
     conn.commit()
@@ -269,7 +269,7 @@ def enviar_mensagem(msg: Mensagem):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto) VALUES (%s, %s, %s)",
+        "INSERT INTO Mensagem (ConversaID, RemetenteUsuarioID, Texto) VALUES (?, ?, ?)",
         (msg.conversa_id, msg.remetente_usuario_id, msg.texto)
     )
     conn.commit()
