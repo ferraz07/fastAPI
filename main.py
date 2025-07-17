@@ -14,6 +14,10 @@ import pyodbc
 
 app = FastAPI()
 
+@app.get("/health")
+async def health_check():
+    return {"status": "OK", "message": "App is running"}
+
 @app.get("/testar-email")
 async def teste_email():
     print("\n=== INICIANDO TESTE DE EMAIL ===")  # Debug 0
