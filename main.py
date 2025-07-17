@@ -6,14 +6,13 @@ import requests
 import uuid
 import json
 import os
-import uvicorn
 from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = FastAPI()
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 # Configuração do CORS necesária
 app.add_middleware(
     CORSMiddleware,
@@ -90,7 +89,8 @@ def cadastrar_paciente_com_usuario(dados: PacienteComUsuario):
         )
 
         conn.commit()
-        publicar_evento("PacienteRegistrado", f"/pacientes/{usuario_id}", {"nome": nome, "email": email})
+        enviar_email_boas_vindas(dados.email, dados.nome)
+        
         return {"mensagem": "Paciente cadastrado com sucesso!", "usuario_id": usuario_id}
 
     except Exception as e:
@@ -279,23 +279,36 @@ def listar_mensagens():
     return data
 # ====== EVENT GRID =======
 
-def publicar_evento(tipo, assunto, dados):
-    url = os.environ["EVENT_GRID_TOPIC_ENDPOINT"]
-    chave = os.environ["EVENT_GRID_TOPIC_KEY"]
 
-    evento = [{
-        "id": str(uuid.uuid4()),
-        "eventType": tipo,
-        "subject": assunto,
-        "eventTime": datetime.utcnow().isoformat(),
-        "data": dados,
-        "dataVersion": "1.0"
-    }]
+def enviar_email_boas_vindas(destinatario, nome):
+    remetente = os.environ.get("SMTP_USER")
+    senha = os.environ.get("SMTP_PASSWORD")
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
 
-    headers = {
-        "aeg-sas-key": chave,
-        "Content-Type": "application/json"
-    }
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Bem-vindo ao MedFinder!"
+    msg["From"] = remetente
+    msg["To"] = destinatario
 
-    response = requests.post(url, headers=headers, data=json.dumps(evento))
-    print("Evento enviado:", response.status_code)
+    html = f"""
+    <html>
+      <body>
+        <p>Olá, {nome}!<br>
+           Seja bem-vindo ao MedFinder. Sua conta foi criada com sucesso!
+        </p>
+      </body>
+    </html>
+    """
+
+    part = MIMEText(html, "html")
+    msg.attach(part)
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(remetente, senha)
+            server.sendmail(remetente, destinatario, msg.as_string())
+        print("Email enviado com sucesso.")
+    except Exception as e:
+        print("Erro ao enviar email:", e)
