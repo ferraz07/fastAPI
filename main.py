@@ -6,10 +6,14 @@ import requests
 import uuid
 import json
 import os
+import uvicorn
 from datetime import datetime
 
 app = FastAPI()
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 # Configuração do CORS necesária
 app.add_middleware(
     CORSMiddleware,
