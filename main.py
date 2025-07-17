@@ -317,31 +317,63 @@ async def login(request: Request):
         if conn:
             conn.close()
 
-# --- AGENDAMENTOS ---
-@app.post("/agendas/", tags=["Agendamentos"], summary="Cria um novo agendamento")
+@app.post("/agendas/", tags=["Agendamentos"])
 def criar_agendamento(agenda: AgendaCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Verifica se médico existe
+        cursor.execute("SELECT 1 FROM Medico WHERE UsuarioID = ?", (agenda.medico_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Médico não encontrado")
+        
+        # Verifica se paciente existe
+        cursor.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (agenda.paciente_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Paciente não encontrado")
+        
         cursor.execute(
-            "INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) OUTPUT INSERTED.ID VALUES (?, ?, ?, ?, ?)",
-            agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status
+            """INSERT INTO Agenda (MedicoID, PacienteID, DataInicio, DataFim, Status) 
+            OUTPUT INSERTED.ID 
+            VALUES (?, ?, ?, ?, ?)""",
+            (agenda.medico_id, agenda.paciente_id, agenda.data_inicio, agenda.data_fim, agenda.status)
         )
         novo_id = cursor.fetchone()[0]
+        conn.commit()
         return {"id": novo_id, **agenda.model_dump()}
+        
     except pyodbc.IntegrityError as e:
-        raise HTTPException(status_code=400, detail=f"Erro de integridade: Verifique se os IDs de Médico e Paciente existem. Detalhe: {e}")
+        raise HTTPException(status_code=400, detail=f"Erro de integridade: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
+        cursor.close()
         conn.close()
 
-@app.get("/agendas/", tags=["Agendamentos"], summary="Lista todos os agendamentos")
+@app.get("/agendas/", tags=["Agendamentos"])
 def listar_agendamentos():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Agenda")
-    agendas = [dict(zip([column[0] for column in cursor.description], row)) for row in cursor.fetchall()]
-    conn.close()
-    return agendas
+    try:
+        cursor.execute("""
+            SELECT 
+                a.ID,
+                a.MedicoID,
+                m.Nome AS MedicoNome,
+                a.PacienteID,
+                p.Nome AS PacienteNome,
+                a.DataInicio,
+                a.DataFim,
+                a.Status
+            FROM Agenda a
+            JOIN Medico m ON a.MedicoID = m.UsuarioID
+            JOIN Paciente p ON a.PacienteID = p.UsuarioID
+        """)
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
     
 # --- CHAT (Lógica do WebSocket e API de Suporte) ---
 
