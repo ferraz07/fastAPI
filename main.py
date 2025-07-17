@@ -17,7 +17,7 @@ app = FastAPI()
 @app.get("/testar-email")
 async def teste_email():
     print("\n=== INICIANDO TESTE DE EMAIL ===")  # Debug 0
-    resultado = enviar_email_boas_vindas("seu-email-de-teste@gmail.com", "Teste Azure")
+    resultado = enviar_email_boas_vindas("f3rrazin@gmail.com", "Teste Azure")
     print(f"=== RESULTADO: {resultado} ===")  # Debug 11
     return {"status": "sucesso" if resultado else "falha"}
 
