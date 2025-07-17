@@ -12,6 +12,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pyodbc
 from typing import Optional
+from fastapi import WebSocket, WebSocketDisconnect
 
 app = FastAPI()
 
