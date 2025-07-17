@@ -422,37 +422,54 @@ def listar_mensagens():
             conn.close()
 
 def enviar_email_boas_vindas(destinatario, nome):
-    remetente = os.environ.get("SMTP_USER")
-    senha = os.environ.get("SMTP_PASSWORD")
-    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Bem-vindo ao MedFinder!"
-    msg["From"] = remetente
-    msg["To"] = destinatario
-
-    html = f"""
-    <html>
-      <body>
-        <p>Olá, {nome}!<br>
-           Seja bem-vindo ao MedFinder. Sua conta foi criada com sucesso!
-        </p>
-      </body>
-    </html>
-    """
-
-    part = MIMEText(html, "html")
-    msg.attach(part)
-
     try:
+        # Obter configurações
+        remetente = os.environ.get("SMTP_USER")
+        senha = os.environ.get("SMTP_PASSWORD")
+        smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(os.environ.get("SMTP_PORT", 587))
+        
+        print(f"Configuração SMTP: Server={smtp_server}, Port={smtp_port}, From={remetente}")
+        
+        if not all([remetente, senha]):
+            raise ValueError("Variáveis de ambiente SMTP_USER ou SMTP_PASSWORD não configuradas")
+
+        # Criar mensagem
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Bem-vindo ao MedFinder!"
+        msg["From"] = remetente
+        msg["To"] = destinatario
+
+        html = f"""
+        <html>
+          <body>
+            <p>Olá, {nome}!<br>
+               Seja bem-vindo ao MedFinder. Sua conta foi criada com sucesso!
+            </p>
+          </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(html, "html"))
+
+        # Enviar e-mail
         with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(remetente, senha)
             server.sendmail(remetente, destinatario, msg.as_string())
-        print("Email enviado com sucesso.")
+        
+        print(f"E-mail enviado com sucesso para {destinatario}")
+        return True
+        
     except Exception as e:
-        print("Erro ao enviar email:", e)
+        error_msg = f"Erro ao enviar e-mail: {str(e)}"
+        print(error_msg)
+        # Adicione este log ao sistema de logs do Azure
+        if 'app' in globals():
+            app.logger.error(error_msg)
+        return False
 
 if __name__ == "__main__":
     import uvicorn
