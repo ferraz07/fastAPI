@@ -587,21 +587,13 @@ def criar_agendamento(agenda: AgendaCreate):
         conn.commit()
         
         # Mapeia para o modelo de resposta
-        #return {
-        #    "id_agenda": inserted_data[0],
-        #    "medico_id": inserted_data[1],
-        #    "paciente_id": inserted_data[2],
-        #    "data_inicio": inserted_data[3],
-        #    "data_fim": inserted_data[4],
-        #    "status": inserted_data[5]
-        #}
         return {
-            "id": agenda_id,
-            "medico_id": agenda.medico_id,
-            "paciente_id": agenda.paciente_id,
-            "data_inicio": data_inicio + ".0000000",  # Formato visto no banco
-            "data_fim": data_fim + ".0000000",
-            "status": agenda.status
+            "id_agenda": inserted_data[0],
+            "medico_id": inserted_data[1],
+            "paciente_id": inserted_data[2],
+            "data_inicio": inserted_data[3],
+            "data_fim": inserted_data[4],
+            "status": inserted_data[5]
         }
         
     except pyodbc.IntegrityError as e:
