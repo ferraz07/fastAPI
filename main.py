@@ -776,39 +776,48 @@ async def websocket_endpoint(websocket: WebSocket, conversa_id: int, usuario_id:
     finally:
         manager.disconnect(usuario_id)
 
-#@app.get("/historico/{conversa_id}", tags=["Chat"])
-#async def get_historico(conversa_id: int):
-#    """
-#    Busca no banco de dados todas as mensagens de uma conversa específica,
-#    ordenadas da mais antiga para a mais nova.
-#    """
-#    # 1. Pede uma conexão com o banco de dados
-#    conn = get_connection() # ou get_db_connection()
-#    if not conn:
-#        raise HTTPException(status_code=503, detail="Serviço indisponível.")
-#    
-#    cursor = conn.cursor()
-#    
-    # 2. Prepara a consulta SQL
-    # Seleciona todas as colunas (*) da tabela 'Mensagem'
-    # Filtra para pegar apenas as mensagens onde o 'ConversaID' corresponde ao ID recebido
-    # Ordena os resultados pela 'DataEnvio' para que o chat apareça na ordem correta
-#    sql = "SELECT * FROM Mensagem WHERE ConversaID = ? ORDER BY DataEnvio ASC"
+#DESCOMENTEI
+@app.get("/historico/{conversa_id}", tags=["Chat"])
+async def get_historico(conversa_id: int):
+    conn = get_connection()
+    if not conn:
+        raise HTTPException(status_code=503, detail="Serviço indisponível.")
     
-    # 3. Executa a consulta de forma segura
-#    cursor.execute(sql, conversa_id)
+    cursor = conn.cursor()
+    sql = "SELECT * FROM Mensagem WHERE ConversaID = ? ORDER BY DataEnvio ASC"
+    cursor.execute(sql, conversa_id)
     
-    # 4. Formata os resultados para o formato JSON
-    # Pega o nome das colunas (ID, Texto, etc.)
-#    columns = [column[0] for column in cursor.description]
-    # Cria uma lista de dicionários, onde cada dicionário representa uma mensagem
-#    historico = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    columns = [column[0] for column in cursor.description]
+    historico = [dict(zip(columns, row)) for row in cursor.fetchall()]
     
-    # 5. Fecha a conexão com o banco
-#    conn.close()
-    
-    # 6. Retorna a lista de mensagens (o histórico)
-#    return historico
+    conn.close()
+    return historico
+
+#NOVO
+@app.get("/usuarios/{usuario_id}/conversas", tags=["Chat"])
+def listar_conversas(usuario_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        sql = """
+            SELECT
+                C.ID AS ConversaID,
+                C.MedicoUsuarioID,
+                M.Nome AS MedicoNome,
+                C.PacienteUsuarioID,
+                P.Nome AS PacienteNome
+            FROM Conversa C
+            INNER JOIN Medico M ON C.MedicoUsuarioID = M.UsuarioID
+            INNER JOIN Paciente P ON C.PacienteUsuarioID = P.UsuarioID
+            WHERE C.MedicoUsuarioID = ? OR C.PacienteUsuarioID = ?
+        """
+        cursor.execute(sql, usuario_id, usuario_id)
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def enviar_email_boas_vindas(destinatario, nome):
     try:
