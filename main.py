@@ -588,7 +588,7 @@ def criar_agendamento(agenda: AgendaCreate):
         
         # Mapeia para o modelo de resposta
         return {
-            "id_agenda": inserted_data[0],
+            "id": inserted_data[0],
             "medico_id": inserted_data[1],
             "paciente_id": inserted_data[2],
             "data_inicio": inserted_data[3],
@@ -627,7 +627,7 @@ def obter_agendamento(agenda_id: int):
             raise HTTPException(status_code=404, detail="Agendamento não encontrado")
         
         return {
-            "id_agenda": agenda[0],
+            "id": agenda[0],
             "medico_id": agenda[1],
             "paciente_id": agenda[2],
             "data_inicio": agenda[3],
@@ -657,7 +657,7 @@ def listar_agendamentos():
         
         return [
             {
-                "id_agenda": row[0],
+                "id": row[0],
                 "medico_id": row[1],
                 "paciente_id": row[2],
                 "data_inicio": row[3],
