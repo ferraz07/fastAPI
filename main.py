@@ -546,7 +546,7 @@ async def login(request: Request):
 
 @app.post("/agendas/", response_model=AgendaResponse, tags=["Agendamentos"])
 def criar_agendamento(agenda: AgendaCreate):
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     # Debug: Log dos dados recebidos
         print(f"Dados recebidos para agendamento: {agenda.dict()}")
@@ -606,7 +606,7 @@ def criar_agendamento(agenda: AgendaCreate):
 
 @app.get("/agendas/{agenda_id}", response_model=AgendaResponse, tags=["Agendamentos"])
 def obter_agendamento(agenda_id: int):
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -641,7 +641,7 @@ def obter_agendamento(agenda_id: int):
 
 @app.get("/agendas/", response_model=list[AgendaResponse], tags=["Agendamentos"])
 def listar_agendamentos():
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -671,7 +671,7 @@ def listar_agendamentos():
         conn.close()
 
 def salvar_mensagem_no_banco(conversa_id: int, remetente_id: int, texto: str):
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
@@ -686,7 +686,7 @@ def salvar_mensagem_no_banco(conversa_id: int, remetente_id: int, texto: str):
 
 @app.post("/conversas/", tags=["Chat"])
 async def criar_conversa(conversa_data: ConversaCreate):
-    conn = get_db_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     try:
         # Verifica quem é médico e quem é paciente
@@ -740,7 +740,7 @@ async def websocket_endpoint(websocket: WebSocket, conversa_id: int, usuario_id:
             data = await websocket.receive_json()
             
             # Verifica se o usuário tem permissão nesta conversa
-            conn = get_db_connection()
+            conn = get_connection()
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT 1 FROM Conversa WHERE ID = ? AND (MedicoUsuarioID = ? OR PacienteUsuarioID = ?)",
