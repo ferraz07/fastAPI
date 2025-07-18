@@ -273,16 +273,52 @@ def criar_medico(medico: Medico):
             conn.close()
 
 @app.get("/medicos")
-def listar_medicos():
+#def listar_medicos():
+#    conn = None
+#    cursor = None
+#    try:
+#        conn = get_connection()
+#        cursor = conn.cursor()
+#        cursor.execute("SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP FROM Medico")
+#        columns = [column[0] for column in cursor.description]
+#        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+#        return data
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=str(e))
+#    finally:
+#        if cursor:
+#            cursor.close()
+#        if conn:
+#            conn.close()
+# Adicione este novo endpoint na seção de médicos
+#@app.get("/medicos/")
+def listar_medicos(usuario_id: Optional[int] = None):
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP FROM Medico")
+        
+        if usuario_id:
+            cursor.execute("""
+                SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP 
+                FROM Medico 
+                WHERE UsuarioID = ?
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP 
+                FROM Medico
+            """)
+            
         columns = [column[0] for column in cursor.description]
         data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        if usuario_id and not data:
+            raise HTTPException(status_code=404, detail="Médico não encontrado")
+            
         return data
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -290,7 +326,6 @@ def listar_medicos():
             cursor.close()
         if conn:
             conn.close()
-
 @app.post("/login")
 async def login(request: Request):
     dados = await request.json()
