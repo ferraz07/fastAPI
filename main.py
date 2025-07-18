@@ -207,6 +207,27 @@ def deletar_usuario(usuario_id: int):
 
 # ==== PACIENTE ====
 @app.post("/pacientes")
+#def criar_paciente(paciente: Paciente):
+#    conn = None
+#    cursor = None
+#    try:
+#        conn = get_connection()
+#        cursor = conn.cursor()
+#        cursor.execute(
+#            "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (?, ?, ?, ?)", 
+#            (paciente.usuario_id, paciente.nome, paciente.data_nascimento, paciente.cpf)
+#        )
+#        conn.commit()
+#        return {"msg": "Paciente criado"}
+#    except pyodbc.IntegrityError as e:
+#        raise HTTPException(status_code=400, detail="CPF já cadastrado ou usuário inválido")
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=str(e))
+#    finally:
+#        if cursor:
+#            cursor.close()
+#        if conn:
+#            conn.close()
 def criar_paciente(paciente: Paciente):
     conn = None
     cursor = None
@@ -214,11 +235,19 @@ def criar_paciente(paciente: Paciente):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO Paciente (UsuarioID, Nome, DataNascimento, CPF) VALUES (?, ?, ?, ?)", 
-            (paciente.usuario_id, paciente.nome, paciente.data_nascimento, paciente.cpf)
+            """INSERT INTO Paciente (
+                UsuarioID, Nome, DataNascimento, CPF
+            ) 
+            OUTPUT INSERTED.UsuarioID
+            VALUES (?, ?, ?, ?)""", 
+            (
+                paciente.usuario_id, paciente.nome, 
+                paciente.data_nascimento, paciente.cpf
+            )
         )
+        paciente_id = cursor.fetchone()[0]  # Retorna o UsuarioID inserido
         conn.commit()
-        return {"msg": "Paciente criado"}
+        return {"id": paciente_id, "msg": "Paciente criado"}
     except pyodbc.IntegrityError as e:
         raise HTTPException(status_code=400, detail="CPF já cadastrado ou usuário inválido")
     except Exception as e:
@@ -228,18 +257,60 @@ def criar_paciente(paciente: Paciente):
             cursor.close()
         if conn:
             conn.close()
-
+            
 @app.get("/pacientes")
-def listar_pacientes():
+#def listar_pacientes():
+#    conn = None
+#    cursor = None
+#    try:
+#        conn = get_connection()
+#        cursor = conn.cursor()
+#        cursor.execute("SELECT ID, UsuarioID, Nome, CPF, DataNascimento FROM Paciente")
+#        columns = [column[0] for column in cursor.description]
+#        data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+#        return data
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=str(e))
+#    finally:
+#        if cursor:
+#            cursor.close()
+#        if conn:
+#            conn.close()
+def listar_pacientes(usuario_id: Optional[int] = None):
     conn = None
     cursor = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT ID, UsuarioID, Nome, CPF, DataNascimento FROM Paciente")
+        
+        if usuario_id:
+            cursor.execute("""
+                SELECT 
+                    UsuarioID as id,
+                    Nome as nome,
+                    DataNascimento as data_nascimento,
+                    CPF as cpf
+                FROM Paciente 
+                WHERE UsuarioID = ?
+            """, (usuario_id,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    UsuarioID as id,
+                    Nome as nome,
+                    DataNascimento as data_nascimento,
+                    CPF as cpf
+                FROM Paciente
+            """)
+            
         columns = [column[0] for column in cursor.description]
         data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        if usuario_id and not data:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado")
+            
         return data
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -247,7 +318,6 @@ def listar_pacientes():
             cursor.close()
         if conn:
             conn.close()
-
 # ==== MEDICO ====
 @app.post("/medicos")
 #def criar_medico(medico: Medico):
