@@ -548,8 +548,7 @@ async def login(request: Request):
 def criar_agendamento(agenda: AgendaCreate):
     conn = get_connection()
     cursor = conn.cursor()
-    # Debug: Log dos dados recebidos
-        print(f"Dados recebidos para agendamento: {agenda.dict()}")
+    
     try:
         # Verifica se médico existe
         cursor.execute("SELECT 1 FROM Medico WHERE UsuarioID = ?", (agenda.medico_id,))
