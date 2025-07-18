@@ -318,6 +318,74 @@ def listar_pacientes(usuario_id: Optional[int] = None):
             cursor.close()
         if conn:
             conn.close()
+
+@app.get("/medicos/{usuario_id}")
+def obter_medico(usuario_id: int):
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                UsuarioID as id,
+                Nome as nome,
+                Especialidade as especialidade,
+                CRM as crm,
+                Logradouro as logradouro,
+                Cidade as cidade,
+                CEP as cep
+            FROM Medico 
+            WHERE UsuarioID = ?
+        """, (usuario_id,))
+        
+        medico = cursor.fetchone()
+        if not medico:
+            raise HTTPException(status_code=404, detail="Médico não encontrado")
+            
+        columns = [column[0] for column in cursor.description]
+        return dict(zip(columns, medico))
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+@app.get("/pacientes/{usuario_id}")
+def obter_paciente(usuario_id: int):
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                UsuarioID as id,
+                Nome as nome,
+                DataNascimento as data_nascimento,
+                CPF as cpf
+            FROM Paciente 
+            WHERE UsuarioID = ?
+        """, (usuario_id,))
+        
+        paciente = cursor.fetchone()
+        if not paciente:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado")
+            
+        columns = [column[0] for column in cursor.description]
+        return dict(zip(columns, paciente))
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 # ==== MEDICO ====
 @app.post("/medicos")
 #def criar_medico(medico: Medico):
