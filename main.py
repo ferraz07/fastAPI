@@ -250,6 +250,27 @@ def listar_pacientes():
 
 # ==== MEDICO ====
 @app.post("/medicos")
+#def criar_medico(medico: Medico):
+#    conn = None
+#    cursor = None
+#    try:
+#        conn = get_connection()
+#        cursor = conn.cursor()
+#        cursor.execute(
+#            "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+#            (medico.usuario_id, medico.nome, medico.especialidade, medico.crm, medico.logradouro, medico.cidade, medico.cep)
+#        )
+#        conn.commit()
+#        return {"msg": "Médico criado"}
+#    except pyodbc.IntegrityError as e:
+#        raise HTTPException(status_code=400, detail="CRM já cadastrado ou usuário inválido")
+#    except Exception as e:
+#        raise HTTPException(status_code=500, detail=str(e))
+#    finally:
+#        if cursor:
+#            cursor.close()
+#        if conn:
+#            conn.close()
 def criar_medico(medico: Medico):
     conn = None
     cursor = None
@@ -257,11 +278,20 @@ def criar_medico(medico: Medico):
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO Medico (UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-            (medico.usuario_id, medico.nome, medico.especialidade, medico.crm, medico.logradouro, medico.cidade, medico.cep)
+            """INSERT INTO Medico (
+                UsuarioID, Nome, Especialidade, CRM, 
+                Logradouro, Cidade, CEP
+            ) 
+            OUTPUT INSERTED.UsuarioID
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+            (
+                medico.usuario_id, medico.nome, medico.especialidade, 
+                medico.crm, medico.logradouro, medico.cidade, medico.cep
+            )
         )
+        medico_id = cursor.fetchone()[0]
         conn.commit()
-        return {"msg": "Médico criado"}
+        return {"id": medico_id, "msg": "Médico criado"}
     except pyodbc.IntegrityError as e:
         raise HTTPException(status_code=400, detail="CRM já cadastrado ou usuário inválido")
     except Exception as e:
@@ -301,13 +331,27 @@ def listar_medicos(usuario_id: Optional[int] = None):
         
         if usuario_id:
             cursor.execute("""
-                SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP 
+                SELECT 
+                    UsuarioID as id,
+                    Nome as nome,
+                    Especialidade as especialidade,
+                    CRM as crm,
+                    Logradouro as logradouro,
+                    Cidade as cidade,
+                    CEP as cep
                 FROM Medico 
                 WHERE UsuarioID = ?
             """, (usuario_id,))
         else:
             cursor.execute("""
-                SELECT ID, UsuarioID, Nome, Especialidade, CRM, Logradouro, Cidade, CEP 
+                SELECT 
+                    UsuarioID as id,
+                    Nome as nome,
+                    Especialidade as especialidade,
+                    CRM as crm,
+                    Logradouro as logradouro,
+                    Cidade as cidade,
+                    CEP as cep
                 FROM Medico
             """)
             
@@ -326,6 +370,7 @@ def listar_medicos(usuario_id: Optional[int] = None):
             cursor.close()
         if conn:
             conn.close()
+
 @app.post("/login")
 async def login(request: Request):
     dados = await request.json()
