@@ -558,6 +558,9 @@ def criar_agendamento(agenda: AgendaCreate):
         cursor.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (agenda.paciente_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Paciente não encontrado")
+            
+        data_inicio = agenda.data_inicio.strftime("%Y-%m-%d %H:%M:%S") if hasattr(agenda.data_inicio, 'strftime') else agenda.data_inicio
+        data_fim = agenda.data_fim.strftime("%Y-%m-%d %H:%M:%S") if hasattr(agenda.data_fim, 'strftime') else agenda.data_fim
         
         # Insere e retorna o ID gerado
         cursor.execute(
