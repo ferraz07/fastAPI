@@ -53,6 +53,13 @@ class Usuario(BaseModel):
     email: str
     senha: str
 
+ # NOVO (TESTE)
+class UsuarioResponse(BaseModel):
+    ID: int
+    Email: str
+    class Config:
+        from_attributes = True
+
 class Paciente(BaseModel):
     usuario_id: int
     nome: str
