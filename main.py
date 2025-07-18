@@ -548,6 +548,8 @@ async def login(request: Request):
 def criar_agendamento(agenda: AgendaCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
+    # Debug: Log dos dados recebidos
+        print(f"Dados recebidos para agendamento: {agenda.dict()}")
     try:
         # Verifica se médico existe
         cursor.execute("SELECT 1 FROM Medico WHERE UsuarioID = ?", (agenda.medico_id,))
@@ -558,9 +560,6 @@ def criar_agendamento(agenda: AgendaCreate):
         cursor.execute("SELECT 1 FROM Paciente WHERE UsuarioID = ?", (agenda.paciente_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Paciente não encontrado")
-            
-        data_inicio = agenda.data_inicio.strftime("%Y-%m-%d %H:%M:%S") if hasattr(agenda.data_inicio, 'strftime') else agenda.data_inicio
-        data_fim = agenda.data_fim.strftime("%Y-%m-%d %H:%M:%S") if hasattr(agenda.data_fim, 'strftime') else agenda.data_fim
         
         # Insere e retorna o ID gerado
         cursor.execute(
@@ -588,13 +587,21 @@ def criar_agendamento(agenda: AgendaCreate):
         conn.commit()
         
         # Mapeia para o modelo de resposta
+        #return {
+        #    "id_agenda": inserted_data[0],
+        #    "medico_id": inserted_data[1],
+        #    "paciente_id": inserted_data[2],
+        #    "data_inicio": inserted_data[3],
+        #    "data_fim": inserted_data[4],
+        #    "status": inserted_data[5]
+        #}
         return {
-            "id_agenda": inserted_data[0],
-            "medico_id": inserted_data[1],
-            "paciente_id": inserted_data[2],
-            "data_inicio": inserted_data[3],
-            "data_fim": inserted_data[4],
-            "status": inserted_data[5]
+            "id": agenda_id,
+            "medico_id": agenda.medico_id,
+            "paciente_id": agenda.paciente_id,
+            "data_inicio": data_inicio + ".0000000",  # Formato visto no banco
+            "data_fim": data_fim + ".0000000",
+            "status": agenda.status
         }
         
     except pyodbc.IntegrityError as e:
