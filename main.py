@@ -18,7 +18,7 @@ app = FastAPI()
 
 @app.get("/health")
 async def health_check():
-    return {"status": "OK", "message": "App is running"}
+    return {"status": "OK", "message": "App is running"} 
 
 @app.get("/testar-email")
 async def teste_email():
@@ -105,6 +105,9 @@ class PacienteComUsuario(BaseModel):
     nome: str
     cpf: str
     data_nascimento: str
+
+class AgendaUpdateStatus(BaseModel):
+    status: str
 
 # ==== USUARIO ====
 @app.post("/pacientes-com-usuario")
@@ -668,6 +671,99 @@ def listar_agendamentos():
     finally:
         cursor.close()
         conn.close()
+
+@app.patch("/agendas/{agenda_id}/status", response_model=AgendaResponse, tags=["Agendamentos"])
+def editar_status_agendamento(agenda_id: int, agenda_update: AgendaUpdateStatus):
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Verifica se o agendamento existe
+        cursor.execute("SELECT ID FROM Agenda WHERE ID = ?", (agenda_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+
+        # 2. Atualiza o status no banco de dados
+        cursor.execute(
+            "UPDATE Agenda SET Status = ? WHERE ID = ?",
+            (agenda_update.status, agenda_id)
+        )
+        conn.commit()
+
+        # 3. Se a atualização foi bem-sucedida, busca e retorna o agendamento completo
+        if cursor.rowcount == 0:
+            # Isso pode acontecer em uma condição de corrida, mas é bom verificar
+            raise HTTPException(status_code=404, detail="Não foi possível atualizar o agendamento")
+
+        cursor.execute(
+            """SELECT ID, MedicoID, PacienteID, DataInicio, DataFim, Status
+               FROM Agenda WHERE ID = ?""",
+            (agenda_id,)
+        )
+        agenda_atualizada = cursor.fetchone()
+        
+        return {
+            "id": agenda_atualizada[0],
+            "medico_id": agenda_atualizada[1],
+            "paciente_id": agenda_atualizada[2],
+            "data_inicio": agenda_atualizada[3],
+            "data_fim": agenda_atualizada[4],
+            "status": agenda_atualizada[5]
+        }
+
+    except HTTPException as http_exc:
+        raise http_exc # Re-lança a exceção para o FastAPI tratar
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@app.delete("/agendas/{agenda_id}", tags=["Agendamentos"])
+def excluir_agendamento(agenda_id: int):
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        
+        cursor.execute("SELECT ID FROM Agenda WHERE ID = ?", (agenda_id,))
+        agendamento = cursor.fetchone()
+        
+        if not agendamento:
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+            
+        
+        cursor.execute("DELETE FROM Agenda WHERE ID = ?", (agenda_id,))
+        conn.commit()
+        
+        
+        if cursor.rowcount == 0:
+             
+            raise HTTPException(status_code=404, detail="Agendamento não encontrado para exclusão")
+
+        return {"mensagem": "Agendamento excluído com sucesso"}
+
+    except HTTPException as http_exc:
+       
+        raise http_exc
+    except Exception as e:
+        
+        if conn:
+            conn.rollback() # Desfaz a transação em caso de erro
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def salvar_mensagem_no_banco(conversa_id: int, remetente_id: int, texto: str):
     conn = get_connection()
