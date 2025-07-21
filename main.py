@@ -881,11 +881,13 @@ async def get_historico(conversa_id: int):
     
     cursor = conn.cursor()
     sql = "SELECT * FROM Mensagem WHERE ConversaID = ? ORDER BY DataEnvio ASC"
-    cursor.execute(sql, conversa_id)
+    
+    cursor.execute(sql, (conversa_id,))
     
     columns = [column[0] for column in cursor.description]
     historico = [dict(zip(columns, row)) for row in cursor.fetchall()]
     
+    cursor.close()
     conn.close()
     return historico
 
